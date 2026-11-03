@@ -22,8 +22,8 @@ Back_Right_wheelbase = -(wheelbase / 2.0)
 Back_Right_track_width = -(track_width / 2.0)
 
 
-Velocity_Linear_X = Velocity * math.cos(Alpha - Yaw)
-Velocity_Linear_Y = Velocity * math.sin(Alpha - Yaw)
+Velocity_Linear_X = Velocity * math.cos(math.radians(Alpha - Yaw))
+Velocity_Linear_Y = Velocity * math.sin(math.radians(Alpha - Yaw))
 
 Velocity_Robot_X_Front_Left = Velocity_Linear_X - Omega * Front_Left_track_width
 Velocity_Robot_Y_Front_Left = Velocity_Linear_Y + Omega * Front_Left_wheelbase

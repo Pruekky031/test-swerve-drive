@@ -4,12 +4,19 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class SwerveParams:
+    mode: str = "4W"  # "4W" or "3W"
     velocity: float = 0.0
     alpha_deg: float = 0.0
     yaw_deg: float = 0.0
     omega: float = 2.0
+    # 4-Wheel parameters
     wheelbase: float = 1.2
     track_width: float = 1.2
+    # 3-Wheel parameters
+    radius: float = 0.65
+    angle_front_deg: float = 0.0
+    angle_bl_deg: float = 120.0
+    angle_br_deg: float = 240.0
 
 
 @dataclass(frozen=True)
@@ -53,18 +60,37 @@ def calculate_swerve(params: SwerveParams) -> SwerveResult:
     yaw_rad = math.radians(params.yaw_deg)
     heading_rad = math.radians(90.0 + params.yaw_deg)
 
-    half_wb = params.wheelbase / 2.0
-    half_tw = params.track_width / 2.0
-
     vx_linear = params.velocity * math.cos(alpha_rad - yaw_rad)
     vy_linear = params.velocity * math.sin(alpha_rad - yaw_rad)
 
-    wheel_positions = [
-        ("FL", "Wheel A (FL)", half_wb, half_tw),
-        ("FR", "Wheel B (FR)", half_wb, -half_tw),
-        ("BL", "Wheel C (BL)", -half_wb, half_tw),
-        ("BR", "Wheel D (BR)", -half_wb, -half_tw),
-    ]
+    if params.mode == "3W":
+        r = params.radius
+        af_rad = math.radians(params.angle_front_deg)
+        abl_rad = math.radians(params.angle_bl_deg)
+        abr_rad = math.radians(params.angle_br_deg)
+
+        wheel_positions = [
+            ("F", "Wheel A (Front)", r * math.cos(af_rad), r * math.sin(af_rad)),
+            ("BL", "Wheel B (BL)", r * math.cos(abl_rad), r * math.sin(abl_rad)),
+            ("BR", "Wheel C (BR)", r * math.cos(abr_rad), r * math.sin(abr_rad)),
+        ]
+        local_corners = [(lx, ly) for _, _, lx, ly in wheel_positions]
+    else:
+        half_wb = params.wheelbase / 2.0
+        half_tw = params.track_width / 2.0
+
+        wheel_positions = [
+            ("FL", "Wheel A (FL)", half_wb, half_tw),
+            ("FR", "Wheel B (FR)", half_wb, -half_tw),
+            ("BL", "Wheel C (BL)", -half_wb, half_tw),
+            ("BR", "Wheel D (BR)", -half_wb, -half_tw),
+        ]
+        local_corners = [
+            (half_wb, half_tw),
+            (half_wb, -half_tw),
+            (-half_wb, -half_tw),
+            (-half_wb, half_tw),
+        ]
 
     wheels: dict[str, WheelState] = {}
     for key, label, lx, ly in wheel_positions:
@@ -91,12 +117,6 @@ def calculate_swerve(params: SwerveParams) -> SwerveResult:
             world_angle_deg=world_angle_deg,
         )
 
-    local_corners = [
-        (half_wb, half_tw),
-        (half_wb, -half_tw),
-        (-half_wb, -half_tw),
-        (-half_wb, half_tw),
-    ]
     chassis_corners_world = [
         rotate_2d(cx, cy, heading_rad) for cx, cy in local_corners
     ]

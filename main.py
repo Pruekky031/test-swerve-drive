@@ -26,10 +26,12 @@ BTN_ACTIVE = "#1d4ed8"
 class SwerveDriveApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
-        self.root.title("Swerve Drive Simulator")
-        self.root.geometry("1000x650")
-        self.root.minsize(880, 560)
+        self.root.title("Swerve Drive Simulator (3-Wheel & 4-Wheel)")
+        self.root.geometry("1060x720")
+        self.root.minsize(920, 620)
         self.root.configure(bg=BG_MAIN)
+
+        self.mode_var = tk.StringVar(value="4W")
 
         self.vars: dict[str, tk.DoubleVar] = {
             "velocity": tk.DoubleVar(value=0.0),
@@ -38,6 +40,10 @@ class SwerveDriveApp:
             "omega": tk.DoubleVar(value=2.0),
             "wheelbase": tk.DoubleVar(value=1.2),
             "track_width": tk.DoubleVar(value=1.2),
+            "radius": tk.DoubleVar(value=0.65),
+            "angle_front_deg": tk.DoubleVar(value=0.0),
+            "angle_bl_deg": tk.DoubleVar(value=120.0),
+            "angle_br_deg": tk.DoubleVar(value=240.0),
         }
         self.entry_vars: dict[str, tk.StringVar] = {}
         self.formats: dict[str, str] = {
@@ -47,6 +53,10 @@ class SwerveDriveApp:
             "omega": "{:.2f}",
             "wheelbase": "{:.2f}",
             "track_width": "{:.2f}",
+            "radius": "{:.2f}",
+            "angle_front_deg": "{:.1f}",
+            "angle_bl_deg": "{:.1f}",
+            "angle_br_deg": "{:.1f}",
         }
         self.bounds: dict[str, tuple[float, float]] = {
             "velocity": (0.0, 10.0),
@@ -55,41 +65,82 @@ class SwerveDriveApp:
             "omega": (-10.0, 10.0),
             "wheelbase": (0.3, 2.5),
             "track_width": (0.3, 2.5),
+            "radius": (0.2, 1.5),
+            "angle_front_deg": (-180.0, 360.0),
+            "angle_bl_deg": (-180.0, 360.0),
+            "angle_br_deg": (-180.0, 360.0),
         }
-        self.auto_calc_var = tk.BooleanVar(value=False)
+        self.auto_calc_var = tk.BooleanVar(value=True)
         self.card_labels: dict[str, tk.Label] = {}
+        self.mode_buttons: dict[str, tk.Button] = {}
         self.current_result: SwerveResult = calculate_swerve(self._read_params())
 
         self._build_layout()
+        self._update_mode_ui()
         self.calculate_and_render(log_to_console=True)
 
     def _read_params(self) -> SwerveParams:
         return SwerveParams(
+            mode=self.mode_var.get(),
             velocity=float(self.vars["velocity"].get()),
             alpha_deg=float(self.vars["alpha_deg"].get()),
             yaw_deg=float(self.vars["yaw_deg"].get()),
             omega=float(self.vars["omega"].get()),
             wheelbase=float(self.vars["wheelbase"].get()),
             track_width=float(self.vars["track_width"].get()),
+            radius=float(self.vars["radius"].get()),
+            angle_front_deg=float(self.vars["angle_front_deg"].get()),
+            angle_bl_deg=float(self.vars["angle_bl_deg"].get()),
+            angle_br_deg=float(self.vars["angle_br_deg"].get()),
         )
 
     def _build_layout(self) -> None:
         container = tk.Frame(self.root, bg=BG_MAIN, padx=16, pady=16)
         container.pack(fill=tk.BOTH, expand=True)
-        container.columnconfigure(0, weight=0, minsize=290)
+        container.columnconfigure(0, weight=0, minsize=310)
         container.columnconfigure(1, weight=1)
         container.rowconfigure(0, weight=1)
 
-        # Left Panel: Input Sliders + Numeric Entries + Auto Calculate + Buttons
+        # Left Panel: Mode Switcher + Sliders + Buttons
         left_panel = tk.Frame(
             container,
             bg=BG_PANEL,
             padx=16,
-            pady=16,
+            pady=14,
             highlightbackground=BORDER_COLOR,
             highlightthickness=1,
         )
         left_panel.grid(row=0, column=0, sticky="nsew", padx=(0, 16))
+
+        self._add_section_header(left_panel, "SIMULATION MODE")
+        mode_frame = tk.Frame(left_panel, bg=BG_PANEL)
+        mode_frame.pack(fill=tk.X, pady=(0, 10))
+        mode_frame.columnconfigure(0, weight=1)
+        mode_frame.columnconfigure(1, weight=1)
+
+        btn_4w = tk.Button(
+            mode_frame,
+            text="4-Wheel Swerve",
+            command=lambda: self.set_mode("4W"),
+            relief=tk.FLAT,
+            font=("Sans", 9, "bold"),
+            pady=6,
+            cursor="hand2",
+        )
+        btn_4w.grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        self.mode_buttons["4W"] = btn_4w
+
+        btn_3w = tk.Button(
+            mode_frame,
+            text="3-Wheel Swerve",
+            command=lambda: self.set_mode("3W"),
+            relief=tk.FLAT,
+            font=("Sans", 9, "bold"),
+            pady=6,
+            cursor="hand2",
+        )
+        btn_3w.grid(row=0, column=1, sticky="ew", padx=(4, 0))
+        self.mode_buttons["3W"] = btn_3w
 
         self._add_section_header(left_panel, "MOTION PARAMETERS")
         self._add_slider(left_panel, "velocity", "Velocity (m/s)", 0.0, 10.0, 0.1)
@@ -98,14 +149,36 @@ class SwerveDriveApp:
         self._add_slider(left_panel, "omega", "Omega (rad/s)", -10.0, 10.0, 0.1)
 
         spacer = tk.Frame(left_panel, bg=BORDER_COLOR, height=1)
-        spacer.pack(fill=tk.X, pady=(10, 10))
+        spacer.pack(fill=tk.X, pady=(8, 8))
 
-        self._add_section_header(left_panel, "CHASSIS DIMENSIONS")
-        self._add_slider(left_panel, "wheelbase", "wheelbase (m)", 0.3, 2.5, 0.05)
-        self._add_slider(left_panel, "track_width", "track_width (m)", 0.3, 2.5, 0.05)
+        # Dynamic Geometry Container
+        self.geom_container = tk.Frame(left_panel, bg=BG_PANEL)
+        self.geom_container.pack(fill=tk.X)
+
+        # 4-Wheel Geometry Frame
+        self.frame_4w = tk.Frame(self.geom_container, bg=BG_PANEL)
+        self._add_section_header(self.frame_4w, "4-WHEEL CHASSIS DIMENSIONS")
+        self._add_slider(self.frame_4w, "wheelbase", "wheelbase (m)", 0.3, 2.5, 0.05)
+        self._add_slider(
+            self.frame_4w, "track_width", "track_width (m)", 0.3, 2.5, 0.05
+        )
+
+        # 3-Wheel Geometry Frame
+        self.frame_3w = tk.Frame(self.geom_container, bg=BG_PANEL)
+        self._add_section_header(self.frame_3w, "3-WHEEL GEOMETRY & ANGLES")
+        self._add_slider(self.frame_3w, "radius", "Radius R (m)", 0.2, 1.5, 0.05)
+        self._add_slider(
+            self.frame_3w, "angle_front_deg", "Wheel A Angle (°)", -180.0, 360.0, 1.0
+        )
+        self._add_slider(
+            self.frame_3w, "angle_bl_deg", "Wheel B Angle (°)", -180.0, 360.0, 1.0
+        )
+        self._add_slider(
+            self.frame_3w, "angle_br_deg", "Wheel C Angle (°)", -180.0, 360.0, 1.0
+        )
 
         btn_frame = tk.Frame(left_panel, bg=BG_PANEL)
-        btn_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=(12, 0))
+        btn_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=(10, 0))
 
         auto_chk = tk.Checkbutton(
             btn_frame,
@@ -123,7 +196,7 @@ class SwerveDriveApp:
             anchor="w",
             cursor="hand2",
         )
-        auto_chk.pack(fill=tk.X, pady=(0, 8))
+        auto_chk.pack(fill=tk.X, pady=(0, 6))
 
         calc_btn = tk.Button(
             btn_frame,
@@ -135,7 +208,7 @@ class SwerveDriveApp:
             activeforeground=TEXT_MAIN,
             relief=tk.FLAT,
             font=("Sans", 11, "bold"),
-            pady=8,
+            pady=7,
             cursor="hand2",
         )
         calc_btn.pack(fill=tk.X, pady=(0, 6))
@@ -155,7 +228,7 @@ class SwerveDriveApp:
         )
         reset_btn.pack(fill=tk.X)
 
-        # Right Panel: 2D Vector Canvas + 4 Wheel Telemetry Cards
+        # Right Panel: 2D Vector Canvas + Wheel Telemetry Cards
         right_panel = tk.Frame(container, bg=BG_MAIN)
         right_panel.grid(row=0, column=1, sticky="nsew")
         right_panel.rowconfigure(0, weight=1)
@@ -180,19 +253,54 @@ class SwerveDriveApp:
             "<Configure>", lambda _event: self._draw_canvas(self.current_result)
         )
 
-        cards_frame = tk.Frame(right_panel, bg=BG_MAIN)
-        cards_frame.grid(row=1, column=0, sticky="ew")
-        for idx, (key, title) in enumerate(
-            [
+        self.cards_frame = tk.Frame(right_panel, bg=BG_MAIN)
+        self.cards_frame.grid(row=1, column=0, sticky="ew")
+
+    def set_mode(self, mode: str) -> None:
+        if self.mode_var.get() == mode:
+            return
+        self.mode_var.set(mode)
+        self._update_mode_ui()
+        self.calculate_and_render(log_to_console=True)
+
+    def _update_mode_ui(self) -> None:
+        mode = self.mode_var.get()
+        for m, btn in self.mode_buttons.items():
+            if m == mode:
+                btn.config(bg=BTN_BG, fg=TEXT_MAIN, activebackground=BTN_ACTIVE)
+            else:
+                btn.config(bg=BORDER_COLOR, fg=TEXT_MUTED, activebackground=BG_MAIN)
+
+        if mode == "3W":
+            self.frame_4w.pack_forget()
+            self.frame_3w.pack(fill=tk.X)
+            card_specs = [
+                ("F", "Wheel A (Front)"),
+                ("BL", "Wheel B (BL)"),
+                ("BR", "Wheel C (BR)"),
+            ]
+        else:
+            self.frame_3w.pack_forget()
+            self.frame_4w.pack(fill=tk.X)
+            card_specs = [
                 ("FL", "Wheel A (FL)"),
                 ("FR", "Wheel B (FR)"),
                 ("BL", "Wheel C (BL)"),
                 ("BR", "Wheel D (BR)"),
             ]
-        ):
-            cards_frame.columnconfigure(idx, weight=1)
+
+        for child in self.cards_frame.winfo_children():
+            child.destroy()
+        self.card_labels.clear()
+
+        for col in range(4):
+            self.cards_frame.columnconfigure(col, weight=0)
+
+        num_cards = len(card_specs)
+        for idx, (key, title) in enumerate(card_specs):
+            self.cards_frame.columnconfigure(idx, weight=1)
             card = tk.Frame(
-                cards_frame,
+                self.cards_frame,
                 bg=BG_PANEL,
                 padx=12,
                 pady=10,
@@ -203,7 +311,7 @@ class SwerveDriveApp:
                 row=0,
                 column=idx,
                 sticky="ew",
-                padx=(0 if idx == 0 else 6, 0 if idx == 3 else 6),
+                padx=(0 if idx == 0 else 6, 0 if idx == num_cards - 1 else 6),
             )
             lbl_title = tk.Label(
                 card,
@@ -235,7 +343,7 @@ class SwerveDriveApp:
             font=("Sans", 10, "bold"),
             anchor="w",
         )
-        lbl.pack(fill=tk.X, pady=(0, 6))
+        lbl.pack(fill=tk.X, pady=(0, 4))
 
     def _add_slider(
         self,
@@ -317,7 +425,7 @@ class SwerveDriveApp:
             sliderrelief=tk.FLAT,
             command=on_slide,
         )
-        scale.pack(fill=tk.X, pady=(0, 4))
+        scale.pack(fill=tk.X, pady=(0, 3))
 
     def _on_auto_toggle(self) -> None:
         if self.auto_calc_var.get():
@@ -338,13 +446,17 @@ class SwerveDriveApp:
             entry_var.set(fmt.format(clamped))
 
     def reset_defaults(self) -> None:
-        defaults = SwerveParams()
+        defaults = SwerveParams(mode=self.mode_var.get())
         self.vars["velocity"].set(defaults.velocity)
         self.vars["alpha_deg"].set(defaults.alpha_deg)
         self.vars["yaw_deg"].set(defaults.yaw_deg)
         self.vars["omega"].set(defaults.omega)
         self.vars["wheelbase"].set(defaults.wheelbase)
         self.vars["track_width"].set(defaults.track_width)
+        self.vars["radius"].set(defaults.radius)
+        self.vars["angle_front_deg"].set(defaults.angle_front_deg)
+        self.vars["angle_bl_deg"].set(defaults.angle_bl_deg)
+        self.vars["angle_br_deg"].set(defaults.angle_br_deg)
 
         for key, fmt in self.formats.items():
             self.entry_vars[key].set(fmt.format(self.vars[key].get()))
@@ -357,16 +469,18 @@ class SwerveDriveApp:
         self.current_result = calculate_swerve(params)
 
         for key, wheel in self.current_result.wheels.items():
-            self.card_labels[key].config(
-                text=f"{wheel.speed:.2f} m/s | {wheel.steering_deg:.1f}°"
-            )
+            if key in self.card_labels:
+                self.card_labels[key].config(
+                    text=f"{wheel.speed:.2f} m/s | {wheel.steering_deg:.1f}°"
+                )
 
         if log_to_console:
-            print("-" * 56)
-            for key in ("FL", "FR", "BL", "BR"):
-                w = self.current_result.wheels[key]
+            print("-" * 64)
+            print(f"Mode: {params.mode} Swerve Drive")
+            for wheel in self.current_result.wheels.values():
                 print(
-                    f"{w.label:12s} | Velocity: {w.speed:8.4f} m/s | Steering: {w.steering_deg:7.2f} deg"
+                    f"{wheel.label:16s} | Pos: ({wheel.local_x:+6.3f}, {wheel.local_y:+6.3f}) | "
+                    f"Velocity: {wheel.speed:8.4f} m/s | Steering: {wheel.steering_deg:7.2f} deg"
                 )
 
         self._draw_canvas(self.current_result)
@@ -378,7 +492,13 @@ class SwerveDriveApp:
         cx = width / 2.0
         cy = height / 2.0
 
-        max_dim = max(result.params.wheelbase, result.params.track_width, 0.5)
+        if result.params.mode == "3W":
+            max_dim = max(result.params.radius * 2.0, 0.5)
+            front_span = result.params.radius
+        else:
+            max_dim = max(result.params.wheelbase, result.params.track_width, 0.5)
+            front_span = result.params.wheelbase / 2.0
+
         scale = min(width, height) * 0.30 / max_dim
 
         # Legend
@@ -386,7 +506,7 @@ class SwerveDriveApp:
             14,
             14,
             anchor="nw",
-            text="Green = Wheel Velocity Vector   |   Orange = Robot Heading (Yaw, 0° = +Y)   |   Blue = Linear Velocity (Alpha)",
+            text=f"[{result.params.mode}]  Green = Wheel Velocity Vector   |   Orange = Robot Heading (Yaw, 0° = +Y)   |   Blue = Linear Velocity (Alpha)",
             fill=TEXT_MUTED,
             font=("Sans", 9),
         )
@@ -405,6 +525,19 @@ class SwerveDriveApp:
             cx + 16, 42, text="+Y (0°)", fill=TEXT_MUTED, font=("Sans", 9)
         )
 
+        # Reference mounting circle in 3-Wheel mode
+        if result.params.mode == "3W":
+            r_px = result.params.radius * scale
+            self.canvas.create_oval(
+                cx - r_px,
+                cy - r_px,
+                cx + r_px,
+                cy + r_px,
+                outline=BORDER_COLOR,
+                width=1,
+                dash=(4, 4),
+            )
+
         # Rotated Chassis Polygon
         chassis_pts = []
         for wx, wy in result.chassis_corners_world:
@@ -419,7 +552,7 @@ class SwerveDriveApp:
 
         # Robot Heading (Yaw) Arrow from Center (Yaw = 0 points along +Y)
         heading_rad = math.radians(90.0 + result.params.yaw_deg)
-        front_len = (result.params.wheelbase / 2.0) * 0.75
+        front_len = front_span * 0.75
         fx, fy = rotate_2d(front_len, 0.0, heading_rad)
         fsx, fsy = world_to_screen(fx, fy, cx, cy, scale)
         self.canvas.create_line(
@@ -460,7 +593,7 @@ class SwerveDriveApp:
                 arrowshape=(10, 12, 4),
             )
 
-        # Determine arrow scaling across all 4 wheels
+        # Determine arrow scaling across all wheels
         max_wheel_speed = max((w.speed for w in result.wheels.values()), default=0.0)
 
         # Draw each Wheel Module + Velocity Vector

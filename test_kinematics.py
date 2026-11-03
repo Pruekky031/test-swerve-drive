@@ -16,6 +16,7 @@ class TestSwerveKinematics(unittest.TestCase):
 
     def test_pure_rotation_matches_reference(self):
         params = SwerveParams(
+            mode="4W",
             velocity=0.0,
             alpha_deg=0.0,
             yaw_deg=0.0,
@@ -35,6 +36,29 @@ class TestSwerveKinematics(unittest.TestCase):
         self.assertAlmostEqual(result.wheels["FR"].steering_deg, 45.0, places=6)
         self.assertAlmostEqual(result.wheels["BL"].steering_deg, -135.0, places=6)
         self.assertAlmostEqual(result.wheels["BR"].steering_deg, -45.0, places=6)
+
+    def test_3wheel_pure_rotation_equilateral(self):
+        params = SwerveParams(
+            mode="3W",
+            velocity=0.0,
+            alpha_deg=0.0,
+            yaw_deg=0.0,
+            omega=2.0,
+            radius=0.65,
+            angle_front_deg=0.0,
+            angle_bl_deg=120.0,
+            angle_br_deg=240.0,
+        )
+        result = calculate_swerve(params)
+        self.assertEqual(set(result.wheels.keys()), {"F", "BL", "BR"})
+        expected_speed = 2.0 * 0.65
+
+        for key in ("F", "BL", "BR"):
+            self.assertAlmostEqual(result.wheels[key].speed, expected_speed, places=6)
+
+        self.assertAlmostEqual(result.wheels["F"].steering_deg, 90.0, places=6)
+        self.assertAlmostEqual(result.wheels["BL"].steering_deg, -150.0, places=6)
+        self.assertAlmostEqual(result.wheels["BR"].steering_deg, -30.0, places=6)
 
     def test_pure_translation_along_y(self):
         params = SwerveParams(
